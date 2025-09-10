@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <!-- 移除了可能导致冲突的旧版 MathJax 引用 -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <!-- 保留较新版的 MathJax -->
+    <script type="text/javascript" async
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.1.2/es5/tex-mml-chtml.js">
+    </script>
+    <title>\[C_N/C_{\infty} 计算与可视化\}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .chart-container { width: 100%; height: 600px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>\[C_N/C_{\infty} 计算与可视化\]</h1> <!-- 注意：标题中的 \} 应为 } -->
+        <p>正在计算数据并生成图表...</p>
+        <div class="chart-container">
+            <canvas id="myChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // 模拟 Python numpy.cos 和数学运算
+        function cos(deg) {
+            return Math.cos(deg * Math.PI / 180);
+        }
+
+        // 模拟 Python C_infty 函数
+        function C_infty(x) {
+            const cos_val = cos(x);
+            return (1 + cos_val) / (1 - cos_val);
+        }
+
+        // 模拟 Python rto 函数
+        function rto(x, y) {
+            const C = [];
+            const infty = C_infty(x);
+            const cos_val = cos(x);
+            let cpow = 1;
+
+            for (let N = 1; N <= y; N++) {
+                cpow *= cos_val;
+                // 注意：JavaScript 中的数字精度可能与 Python 有细微差异，
+                // 但这对于图表的整体趋势影响不大。
+                const numerator = (1 + cos_val) / (1 - cos_val) - 2 * ((cos_val - cpow * cos_val) / Math.pow(1 - cos_val, 2) / N);
+                const ratio = numerator / infty;
+                // 修改：计算后立即格式化为8位小数精度
+                C.push(parseFloat(ratio.toFixed(8)));
+            }
+            return C;
+        }
+
+        // 主函数：执行计算并绘制图表
+        async function main() {
+            console.log("开始计算...");
+            const startTime = performance.now();
+
+            // 为了在浏览器中获得更好的响应性，使用较小的数据集
+            // 原Python代码使用了1500万个点，这在浏览器中会导致性能问题或崩溃
+            // 这里我们使用15000个点作为示例，用户可以根据需要调整
+            const numPoints = 15000; 
+            const y_max = numPoints;
+
+            // 使用 Promise 和 setTimeout 来分块处理计算，避免阻塞UI线程
+            // 这是一个简化的异步处理方式，实际应用中可能需要更复杂的任务拆分
+            function asyncRto(x, y_max, chunkSize = 1000) {
+                return new Promise((resolve) => {
+                    const result = [];
+                    let currentN = 1;
+                    const infty = C_infty(x);
+                    const cos_val = cos(x);
+                    let cpow = 1;
+
+                    function processChunk() {
+                        const chunkEnd = Math.min(currentN + chunkSize, y_max + 1);
+                        for (let N = currentN; N < chunkEnd; N++) {
+                            cpow *= cos_val;
+                            const numerator = (1 + cos_val) / (1 - cos_val) - 2 * ((cos_val - cpow * cos_val) / Math.pow(1 - cos_val, 2) / N);
+                            const ratio = numerator / infty;
+                            // 修改：计算后立即格式化为8位小数精度
+                            result.push(parseFloat(ratio.toFixed(8)));
+                        }
+                        currentN = chunkEnd;
+                        
+                        if (currentN <= y_max) {
+                            // 释放控制权给浏览器，防止冻结
+                            setTimeout(processChunk, 0); 
+                        } else {
+                            resolve(result);
+                        }
+                    }
+                    
+                    processChunk();
+                });
+            }
+
+            try {
+                // 并行计算两个数据集
+                const [t_10, t_68] = await Promise.all([
+                    asyncRto(10, y_max),
+                    asyncRto(68, y_max)
+                ]);
+
+                const endTime = performance.now();
+                console.log(`计算完成，耗时: ${((endTime - startTime) / 1000).toFixed(2)} 秒`);
+
+                // 生成 x 轴数据
+                const x_l = Array.from({length: y_max}, (_, i) => i + 1);
+
+                // 准备 Chart.js 数据
+                const ctx = document.getElementById('myChart').getContext('2d');
+                
+                // 销毁可能已存在的图表实例
+                if (window.myChartInstance) {
+                    window.myChartInstance.destroy();
+                }
+
+                // 创建图表
+                window.myChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: x_l, // x轴标签
+                        datasets: [
+                            {
+                                label: 'θ=10',
+                                data: t_10, // y轴数据 for θ=10
+                                borderColor: 'rgb(255, 99, 132)', // 红色
+                                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                                borderWidth: 1,
+                                pointStyle: false, // 隐藏数据点以提高性能
+                                fill: false,
+                                tension: 0 // 设置为 0 使线条为直线段
+                            },
+                            {
+                                label: 'θ=68',
+                                data: t_68, // y轴数据 for θ=68
+                                borderColor: 'rgb(54, 162, 235)', // 蓝色
+                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                borderWidth: 1,
+                                pointStyle: false, // 隐藏数据点以提高性能
+                                fill: false,
+                                tension: 0 // 设置为 0 使线条为直线段
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: '\[C_N/C_{\infty} 比值随 N 的变化\]'
+                            },
+                            legend: {
+                                display: true,
+                                position: 'top',
+                            },
+                            tooltip: {
+                                // 修改：确保 Tooltip 显示8位小数
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.y !== null) {
+                                            // Tooltip 中显示8位小数
+                                            label += context.parsed.y.toFixed(8);
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'N'
+                                },
+                                ticks: {
+                                    // 为了避免标签过于密集，可以只显示部分标签
+                                    callback: function(value, index, values) {
+                                        // 例如，每1000个点显示一个标签
+                                        return index % 1000 === 0 ? value : '';
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Ratio'
+                                },
+                                // 修改：确保 Y 轴刻度显示8位小数
+                                ticks: {
+                                    callback: function(value) {
+                                        if (isFinite(value)) {
+                                            // Y轴刻度显示8位小数
+                                            return value.toFixed(8);
+                                        }
+                                        return ''; // 对于非数字返回空字符串
+                                    }
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 0 // 禁用初始动画以加快显示速度
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                });
+
+                // 更新页面提示信息
+                document.querySelector('p').textContent = `计算完成，耗时: ${((endTime - startTime) / 1000).toFixed(2)} 秒。图表已生成。`;
+
+            } catch (error) {
+                console.error("计算或绘图过程中出错:", error);
+                document.querySelector('p').textContent = "计算或绘图过程中出错，请查看控制台了解详情。";
+            }
+        }
+
+        // 页面加载完成后启动主函数
+        window.onload = main;
+    </script>
+</body>
+</html>
+
+
+
+
